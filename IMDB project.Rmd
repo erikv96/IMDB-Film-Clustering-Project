@@ -1,13 +1,3 @@
----
-title: "Project 2"
-author: "Sergio Navia"
-date: "05/06/2024"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 ### Loading Packages
 
@@ -272,5 +262,6 @@ movies_augmented$kmeanscluster=as.factor(movies_augmented$kmeanscluster)
 y=ggplot(movies_augmented) + geom_point(aes(x=.fittedPC2, y = .fittedPC3, col=kmeanscluster))
 y
 ```
+
 
 
