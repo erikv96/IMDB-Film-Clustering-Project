@@ -1,0 +1,276 @@
+---
+title: "Project 2"
+author: "Sergio Navia"
+date: "05/06/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Loading Packages
+
+```{r, warning=FALSE, message=FALSE}
+library(caret)
+library(ggplot2)
+library(openintro)
+library(ISLR)
+library(carData)
+library(mclust)
+library(yardstick)
+library(pROC)
+library(modelr)
+library(tidyverse)
+library(bestglm)
+library(partykit)
+library(mlbench)
+library(GGally)
+library(dplyr)
+library(stats)
+library(factoextra)
+library(cluster)
+library(units)
+library(janitor)
+library(dplyr)
+library(openintro)
+library(clustMixType)
+library(gridExtra)
+```
+
+### Loading Data
+```{r}
+# Making dataset into usable r data and copying
+imdb = archive_1_
+movies = imdb
+
+# Removing al NA's
+movies = na.omit(movies)
+
+# Removing all non-numerical columns
+movies = movies[,-c(1, 4, 8, 10:14)]
+
+# Removing the unit of measurement "min" in Runtime
+movies$Runtime = gsub("min", "", as.character(movies$Runtime))
+movies$Action = grepl("Action", movies$Genre)
+movies$Adventure = grepl("Adventure", movies$Genre)
+movies$Biography = grepl("Biography", movies$Genre)
+movies$Animation = grepl("Animation", movies$Genre)
+movies$Crime = grepl("Crime", movies$Genre)
+movies$Comedy = grepl("Comedy", movies$Genre)
+movies$Drama = grepl("Drama", movies$Genre)
+movies$History = grepl("History", movies$Genre)
+movies$SciFi = grepl("Sci-Fi", movies$Genre)
+movies$Romance = grepl("Romance", movies$Genre)
+movies$Western = grepl("Western", movies$Genre)
+movies$Fantasy = grepl("Fantasy", movies$Genre)
+movies$Thriller = grepl("Thriller", movies$Genre)
+movies$War = grepl("War", movies$Genre)
+movies$Mystery = grepl("Mystery", movies$Genre)
+movies$Music = grepl("Music", movies$Genre)
+movies$Horror = grepl("Horror", movies$Genre)
+movies$Family = grepl("Family", movies$Genre)
+movies$Sport = grepl("Sport", movies$Genre)
+movies$FilmNoir = grepl("Film-Noir", movies$Genre)
+movies$Musical = grepl("Musical", movies$Genre)
+
+# Changing rownames from numbers to there respective movie
+M = movies[,1]
+M = as.matrix(M)
+movies = as.matrix(movies)
+rownames(movies) = M
+movies = movies[,-c(1,4)]
+movies = as.data.frame(movies)
+movies
+
+# Making the data numeric
+Genres = colnames(movies)
+Genres = Genres[-c(1,2,3,4,5,6)]
+movies[Genres] = sapply(movies[Genres], as.logical)
+movies[Genres] = sapply(movies[Genres], as.numeric)
+movies$Released_Year = as.numeric(movies$Released_Year)
+movies$Runtime = as.numeric(movies$Runtime)
+movies$IMDB_Rating = as.numeric(movies$IMDB_Rating)
+movies$Meta_score = as.numeric(movies$Meta_score)
+movies$No_of_Votes = as.numeric(movies$No_of_Votes)
+movies$Gross = as.numeric(movies$Gross)
+movies = na.omit(movies)
+sapply(movies, class)
+movies = movies[,-5]
+movies
+movies_scaled = scale(movies)
+movies_scaled = data.frame(movies_scaled)
+movies_scaled
+movies2= movies[,-c(6:27)]
+movies2 = scale(movies2)
+movies2 = data.frame(movies2)
+```
+
+Exploratory Data Analysis
+```{r}
+ggpairs(movies[,c('Released_Year','Runtime','IMDB_Rating','Meta_score','Gross')])
+```
+```{r}
+movies_log = movies
+movies_log$Released_Year = log(movies_log$Released_Year)
+movies_log$Runtime = log(movies_log$Runtime)
+movies_log$IMDB_Rating = log(movies_log$IMDB_Rating)
+movies_log$Meta_score = log(movies_log$Meta_score)
+movies_log$Gross = log(movies_log$Gross)
+ggpairs(movies_log[,c('Released_Year','Runtime','IMDB_Rating','Meta_score','Gross')])
+```
+
+```{r}
+summary(movies)
+```
+
+### Dendrogram
+```{r}
+set.seed(12345)
+#Standardizing 
+S = movies2
+S = data.frame(S)
+M_new = 1:713
+# A sample of the standardized data
+samp_S = S[sample(nrow(S), 75),]
+samp_S1 = samp_S
+samp_M = rownames(samp_S)
+tree_movies = hclust(d = dist(samp_S, method = "euclidean"), method = "complete")
+plot(tree_movies, cex = .3)
+```
+
+```{r}
+fviz_dend(tree_movies, k = 3, cex = .3,           
+          horiz = TRUE, rect = TRUE, rect_fill = TRUE)
+```
+
+### Trying to determine K through Silhouette
+```{r}
+set.seed(1234)
+# Dissimilarity Matrix
+D = dist(movies2, method = "euclidean")
+
+# Width for each object
+res_sil = silhouette(pam(D, k = 3, diss = TRUE, stand = FALSE, do.swap = TRUE),
+                     dmatrix = D)
+sum_sil = summary(res_sil)
+sum_sil$avg.width
+# n = 714 is too big  to plot
+
+# Average Silhouette score
+K_max = 10
+sil = numeric(K_max - 1)
+for (k in 2:K_max){
+  sil[k-1] = summary(silhouette(pam(D, k = k, diss = TRUE, stand = FALSE, 
+                                    do.swap = TRUE),
+                                dmatrix = D))$avg.width
+}
+print(paste0("The average silhouette scores for K = ", 2:K_max, " is ", 
+             round(sil,4)))
+```
+
+```{r}
+# Visual of K
+plot(2:K_max, sil, main = "Avg Silhouette vs K", xlab = "K", ylab = "Avg Silhouette",
+pch=16)
+lines(2:K_max, sil, col = "green")
+# As can be seen from the graph and summarization, K = 5 or 4. 
+```
+
+```{r}
+within_ss <- rep(NA, 10)
+set.seed(12345) # it uses random initialization
+for(i in 1:10){
+kp_res = kmeans(x=movies2,
+                 center = i,
+                 iter.max = 1000,
+                 nstart = 50)
+within_ss[i] <- kp_res$tot.withinss
+}
+plot(1:10, within_ss, type = "b", ylab = "Objective Function", xlab = "# Clusters",
+main = "Scree Plot")
+```
+### Kmeans  with K = 3 using kmeans
+```{r}
+set.seed(12345)
+kmean_movies = kmeans(movies2, centers = 3, iter.max = 40, 
+                      nstart = 50, algorithm = "Hartigan-Wong")
+kmean_movies$tot.withinss
+kmean_movies$cluster
+kmean_movies$size
+kmean_movies$centers
+# Took rownames off to get better visualizations
+fviz_cluster(kmean_movies, data = movies2)
+```
+
+
+
+### Kmeans sample with K = 3 using kmeans
+```{r}
+set.seed(12345)
+kmean_movies_sample = kmeans(samp_S, centers = 3, iter.max = 40, 
+                      nstart = 50, algorithm = "Hartigan-Wong")
+kmean_movies$tot.withinss
+kmean_movies$cluster
+kmean_movies$size
+kmean_movies$centers
+# Took rownames off to get better visualizations
+fviz_cluster(kmean_movies_sample, data = samp_S)
+```
+```{r}
+movies_scaled=scale(movies)
+movies$kmeanscluster = NA
+movies2$kmeanscluster = NA
+movies_scaled$kmeanscluster = NA
+movies$kmeanscluster = as.factor(kmean_movies$cluster)
+movies2$kmeanscluster = as.factor(kmean_movies$cluster)
+movies_scaled$kmeanscluster = as.factor(kmean_movies$cluster)
+p1 = ggplot(movies2, aes(x = Gross, y = Released_Year, color = kmeanscluster)) +
+     geom_jitter(width = 0.01, height = 0.01)
+p2 = ggplot(movies2, aes(x = Gross, y = Runtime, color = kmeanscluster)) +
+     geom_jitter(width = 0.01, height = 0.01)
+
+
+p3 = ggplot(movies2, aes(x = Runtime, y = Released_Year, color = kmeanscluster)) +
+     geom_jitter(width = 0.01, height = 0.01)
+
+
+p4 = ggplot(movies2, aes(x = Gross, y = IMDB_Rating, color = kmeanscluster)) +
+     geom_jitter(width = 0.01, height = 0.01)
+
+p5 = ggplot(movies2, aes(x = Gross, y = Meta_score, color = kmeanscluster)) +
+     geom_jitter(width = 0.01, height = 0.01)
+
+p6 = ggplot(movies, aes(x = kmeanscluster, y = Gross, fill = kmeanscluster)) +
+     geom_boxplot()
+
+p7 = ggplot(movies2, aes(x = kmeanscluster, y = Released_Year, fill = kmeanscluster)) +
+     geom_boxplot()
+
+p8 = ggplot(movies, aes(x = kmeanscluster, y = Meta_score, fill = kmeanscluster)) +
+     geom_boxplot()
+
+p9 = ggplot(movies, aes(x = kmeanscluster, y = IMDB_Rating, fill = kmeanscluster)) +
+     geom_boxplot()
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9, nrow =3)
+```
+```{r}
+
+
+pca_movies= prcomp(movies2[,1:5],scale=FALSE)
+pca_movies
+var_explained=pca_movies$sdev^2 / sum(pca_movies$sdev^2)
+plot(var_explained,type='b',ylab ='Variance Explained' , xlab='Principal Component' )
+data.frame(VarianceExplained =var_explained, SummationOfVarExplained=cumsum(var_explained))
+```
+```{r}
+library(broom)
+movies_augmented=augment(pca_movies,movies2)
+
+movies_augmented$kmeanscluster=as.factor(movies_augmented$kmeanscluster)
+
+y=ggplot(movies_augmented) + geom_point(aes(x=.fittedPC2, y = .fittedPC3, col=kmeanscluster))
+y
+```
+
+
